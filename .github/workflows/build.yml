@@ -41,6 +41,19 @@ jobs:
       - name: Build Android APK and Store Bundle
         working-directory: android
         run: ./gradlew assembleRelease bundleRelease lintRelease --no-daemon
+      - name: Enable Emulator Acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Check Installed Android App
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
       - name: Prepare Signing Tool
         run: cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" android/app/build/outputs/apk/release/apksigner.jar
       - uses: actions/upload-artifact@v4
