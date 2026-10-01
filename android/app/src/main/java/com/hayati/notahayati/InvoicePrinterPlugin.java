@@ -61,8 +61,12 @@ public class InvoicePrinterPlugin extends Plugin {
         }
         private boolean requested(int index, PageRange[] ranges) { for (PageRange range : ranges) if (index >= range.getStart() && index <= range.getEnd()) return true; return false; }
         @Override public void onWrite(PageRange[] ranges, ParcelFileDescriptor destination, CancellationSignal signal, WriteResultCallback callback) {
+            new Thread(() -> writePages(ranges, destination, signal, callback), "hayati-print").start();
+        }
+        private void writePages(PageRange[] ranges, ParcelFileDescriptor destination, CancellationSignal signal, WriteResultCallback callback) {
             if (signal.isCanceled()) { callback.onWriteCancelled(); return; }
-            try (ParcelFileDescriptor input = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY); PdfRenderer renderer = new PdfRenderer(input); PrintedPdfDocument document = new PrintedPdfDocument(context, attributes); FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
+            PrintedPdfDocument document = new PrintedPdfDocument(context, attributes);
+            try (ParcelFileDescriptor input = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY); PdfRenderer renderer = new PdfRenderer(input); FileOutputStream out = new FileOutputStream(destination.getFileDescriptor())) {
                 ArrayList<PageRange> written = new ArrayList<>();
                 for (int index = 0; index < count; index++) {
                     if (signal.isCanceled()) { callback.onWriteCancelled(); return; }
@@ -88,6 +92,7 @@ public class InvoicePrinterPlugin extends Plugin {
                 document.writeTo(out);
                 callback.onWriteFinished(written.toArray(new PageRange[0]));
             } catch (Exception error) { callback.onWriteFailed("Pencetakan gagal. Coba simpan PDF dahulu."); }
+            finally { try { document.close(); } catch (Exception ignored) {} }
         }
         @Override public void onFinish() { source.delete(); }
     }
