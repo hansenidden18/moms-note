@@ -1,67 +1,1617 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowRight, CalendarDays, Check, CheckCheck, ChevronRight, CircleHelp, CloudOff, FileText, FolderHeart, House, Leaf, Plus, Printer, Search, Settings, ShieldCheck, Smartphone, Sparkles, Trash2, Upload, Wallet, X, Share2, Pencil, CakeSlice, Download } from 'lucide-react'
-import { dateLabel, defaultShop, emptyStore, invoiceNumber, invoiceTotal, localDate, mergeBackup, period, rupiah, selectInvoices, STORAGE_KEY, validateItems, validateStore, type Invoice, type Item, type Shop, type Store } from './model'
-import { makePdf, stampUrl } from './pdf'
-import { exportFile, native, printNativePdf } from './platform'
-import InvoicePaper from './InvoicePaper'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  ArrowDownToLine,
+  ArrowRight,
+  CalendarDays,
+  Check,
+  CheckCheck,
+  ChevronRight,
+  CircleHelp,
+  CloudOff,
+  FileText,
+  FolderHeart,
+  House,
+  Leaf,
+  Plus,
+  Printer,
+  Search,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Trash2,
+  Upload,
+  Wallet,
+  X,
+  Share2,
+  Pencil,
+  CakeSlice,
+  Download,
+} from "lucide-react";
+import {
+  dateLabel,
+  defaultShop,
+  emptyStore,
+  invoiceNumber,
+  invoiceTotal,
+  localDate,
+  mergeBackup,
+  period,
+  rupiah,
+  selectInvoices,
+  STORAGE_KEY,
+  validateItems,
+  validateStore,
+  type Invoice,
+  type Item,
+  type Shop,
+  type Store,
+} from "./model";
+import { makePdf, stampUrl } from "./pdf";
+import { exportFile, native, printNativePdf } from "./platform";
+import InvoicePaper from "./InvoicePaper";
+import { applyWebUpdate } from "./updates";
 
-type Page='home'|'invoices'|'bulk'|'settings'
-const navigation=[{id:'home' as Page,name:'Beranda',icon:House},{id:'invoices' as Page,name:'Semua Nota',icon:FileText},{id:'bulk' as Page,name:'Cetak Sekaligus',icon:Printer},{id:'settings' as Page,name:'Pengaturan',icon:Settings}]
-function readStore(){try{const raw=localStorage.getItem(STORAGE_KEY);return {data:raw?validateStore(JSON.parse(raw)):emptyStore(),error:''}}catch{return {data:emptyStore(),error:'Data tersimpan belum bisa dibaca. Unduh salinan data sebelum memulihkannya. Data lama tetap disimpan.'}}}
-const initial=readStore()
-function exampleStore():Store{const today=localDate();return {...emptyStore(),nextSequence:4,invoices:[{name:'Bolen Cokelat',quantity:40,price:5000},{name:'Roti Keju',quantity:30,price:6000},{name:'Brownies',quantity:12,price:25000}].map((item,index)=>({id:'example-'+index,number:invoiceNumber(today,index+1),date:today,recipient:'KOKARMINA',branch:'Cabang Contoh',receiver:'',notes:'CONTOH - Bukan nota penagihan.',items:[item],shop:{...defaultShop},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}))}}
-function Button({children,secondary=false,className='',...props}:React.ButtonHTMLAttributes<HTMLButtonElement>&{secondary?:boolean}){return <button className={`${secondary?'button secondary':'button'} ${className}`} {...props}>{children}</button>}
-function Modal({title,onClose,children,wide=false}:{title:string;onClose:()=>void;children:ReactNode;wide?:boolean}){
- const ref=useRef<HTMLDivElement>(null)
- useEffect(()=>{const oldFocus=document.activeElement as HTMLElement;const oldOverflow=document.body.style.overflow;document.body.style.overflow='hidden';ref.current?.focus();const listener=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();if(e.key==='Tab'){const targets=ref.current?.querySelectorAll<HTMLElement>('button:not([disabled]),input,textarea,select,[tabindex="0"]');if(!targets?.length)return;const first=targets[0],last=targets[targets.length-1];if(e.shiftKey&&(document.activeElement===first||document.activeElement===ref.current)){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}};document.addEventListener('keydown',listener);return()=>{document.body.style.overflow=oldOverflow;document.removeEventListener('keydown',listener);oldFocus?.focus()}},[onClose])
- return <div className="modal-backdrop"><div className={`modal ${wide?'wide':''}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}><header className="modal-header"><div><span className="eyebrow">BUKU NOTA IBU</span><h2>{title}</h2></div><button className="icon-button" aria-label="Tutup" onClick={onClose}><X/></button></header>{children}</div></div>
+type Page = "home" | "invoices" | "bulk" | "settings";
+const navigation = [
+  { id: "home" as Page, name: "Beranda", icon: House },
+  { id: "invoices" as Page, name: "Semua Nota", icon: FileText },
+  { id: "bulk" as Page, name: "Cetak Sekaligus", icon: Printer },
+  { id: "settings" as Page, name: "Pengaturan", icon: Settings },
+];
+function readStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return {
+      data: raw ? validateStore(JSON.parse(raw)) : emptyStore(),
+      error: "",
+    };
+  } catch {
+    return {
+      data: emptyStore(),
+      error:
+        "Data tersimpan belum bisa dibaca. Unduh salinan data sebelum memulihkannya. Data lama tetap disimpan.",
+    };
+  }
 }
-export default function App(){
- const [real,setReal]=useState<Store>(initial.data),[demo,setDemo]=useState(false),[demoData,setDemoData]=useState(exampleStore),[page,setPage]=useState<Page>('home')
- const store=demo?demoData:real
- const [editor,setEditor]=useState<Invoice|'new'|null>(null),[preview,setPreview]=useState<Invoice|null>(null),[toast,setToast]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[query,setQuery]=useState(''),[online,setOnline]=useState(navigator.onLine),[update,setUpdate]=useState(false)
- const [range,setRange]=useState(()=>period()),[branch,setBranch]=useState(''),[printInvoices,setPrintInvoices]=useState<Invoice[]>([]),[confirmDelete,setConfirmDelete]=useState<Invoice|null>(null)
- useEffect(()=>{if(!toast)return;const timer=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(timer)},[toast])
- useEffect(()=>{const connectivity=()=>setOnline(navigator.onLine);const updated=()=>setUpdate(true);const sync=(e:StorageEvent)=>{if(e.key===STORAGE_KEY&&e.newValue){try{setReal(validateStore(JSON.parse(e.newValue)))}catch{setError('Data dari tab lain tidak valid. Tutup tab lain sebelum melanjutkan.')}}};window.addEventListener('online',connectivity);window.addEventListener('offline',connectivity);window.addEventListener('storage',sync);window.addEventListener('hayati-update-ready',updated);return()=>{window.removeEventListener('online',connectivity);window.removeEventListener('offline',connectivity);window.removeEventListener('storage',sync);window.removeEventListener('hayati-update-ready',updated)}},[])
- function commit(next:Store){try{validateStore(next);if(!demo){localStorage.setItem(STORAGE_KEY,JSON.stringify(next));setReal(next)}else setDemoData(next);return true}catch(e){setError(e instanceof DOMException?'Penyimpanan penuh. Ekspor cadangan, lalu kosongkan ruang di ponsel.':e instanceof Error?e.message:'Nota belum berhasil disimpan. Silakan coba lagi.');return false}}
- function changePage(next:Page){setPage(next);setError('');window.scrollTo(0,0)}
- const selected=selectInvoices(store.invoices,range.from,range.to,branch)
- const monthly=store.invoices.filter(i=>i.date.startsWith(localDate().slice(0,7)))
- const recent=[...store.invoices].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt)).slice(0,5)
- const filtered=[...store.invoices].filter(i=>`${i.number} ${i.recipient} ${i.branch} ${i.items.map(x=>x.name).join(' ')}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt))
- async function download(invoices:Invoice[],share=false){if(busy)return;setBusy(true);setError('');try{const doc=await makePdf(invoices);const filename=(demo?'CONTOH-':'')+(invoices.length===1?invoices[0].number:`Hayati-${range.from}-sampai-${range.to}`)+'.pdf';const blob=doc.output('blob');if(share&&!native){const file=new File([blob],filename,{type:'application/pdf'});if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'Nota Hayati'});return}}await exportFile(blob,filename);setToast(native?'PDF siap. Pilih tempat menyimpan atau membagikan.':'PDF berhasil dibuat. Simpan atau bagikan dari folder unduhan.')}catch(e){if(!(e instanceof Error&&e.name==='AbortError'))setError(e instanceof Error?e.message:'PDF belum berhasil dibuat. Silakan coba lagi.')}finally{setBusy(false)}}
- async function print(invoices:Invoice[]){if(!invoices.length||busy)return;if(native){setBusy(true);try{await printNativePdf((await makePdf(invoices)).output('blob'))}catch(e){setError(e instanceof Error?e.message:'Belum bisa membuka pencetakan. Gunakan PDF / Bagikan.')}finally{setBusy(false)}return}setPrintInvoices(invoices);await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));try{window.print()}catch{setError('Gunakan Unduh PDF, lalu cetak dari pembaca PDF.')}}
- async function backup(){try{await exportFile(new Blob([JSON.stringify(store,null,2)],{type:'application/json'}),`Hayati-cadangan-${localDate()}.json`);setToast('Cadangan siap disimpan. Simpan di tempat yang aman.')}catch(e){setError(e instanceof Error?e.message:'Cadangan belum berhasil diekspor.')}}
- async function restore(file:File){try{if(file.size>25000000)throw new Error('File terlalu besar. Pilih file cadangan Hayati maksimal 25 MB.');const incoming=validateStore(JSON.parse(await file.text()));const next=mergeBackup(store,incoming);if(commit(next))setToast(`${next.invoices.length-store.invoices.length} nota ditambahkan dari cadangan.`)}catch(e){setError(e instanceof Error?e.message:'File cadangan belum dapat dibaca.')}}
- function saveInvoice(values:Omit<Invoice,'id'|'number'|'createdAt'|'updatedAt'>,old?:Invoice){const now=new Date().toISOString();let sequence=store.nextSequence;while(store.invoices.some(i=>i.number===invoiceNumber(values.date,sequence)))sequence++;const invoice:Invoice={...values,id:old?.id||crypto.randomUUID(),number:old?.number||invoiceNumber(values.date,sequence),createdAt:old?.createdAt||now,updatedAt:now};const rememberedShop=old?store.shop:{...store.shop,supplier:store.shop.supplier||values.shop.supplier,branch:store.shop.branch||values.branch};const next={...store,shop:rememberedShop,invoices:old?store.invoices.map(i=>i.id===old.id?invoice:i):[...store.invoices,invoice],nextSequence:old?store.nextSequence:sequence+1};if(commit(next)){setEditor(null);setPreview(invoice);setToast(old?'Perubahan nota tersimpan.':'Nota tersimpan. Siap dicetak!')}}
- if(initial.error)return <main className="recovery"><ShieldCheck size={40}/><h1>Data Ibu tetap aman di sini.</h1><p>{initial.error}</p><Button onClick={()=>exportFile(new Blob([localStorage.getItem(STORAGE_KEY)||''],{type:'text/plain'}),'Hayati-data-pemulihan.txt')}>Unduh data untuk pemulihan</Button><p>Minta bantuan sebelum menghapus data aplikasi.</p></main>
- return <><div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-icon"><CakeSlice size={26}/></span><div><strong>nota<span>hayati</span></strong><small>BUKU NOTA IBU</small></div></div><span className="nav-label">TOKO IBU</span><nav>{navigation.map(({id,name,icon:Icon})=><button key={id} onClick={()=>changePage(id)} className={page===id?'active':''}><Icon size={20}/><span>{name}</span>{page===id&&<span className="nav-dot"/>}</button>)}</nav><div className="sidebar-note"><span className="mini-icon"><FolderHeart size={21}/></span><strong>Catatan rapi,<br/>hati lebih tenang.</strong><p>Semua nota toko dalam satu tempat.</p></div><div className="shop-badge"><span>H</span><div><strong>Hayati</strong><small>Cake &amp; Bakery</small></div><Leaf size={18}/></div></aside><div className="main-shell"><header className="topbar"><span className="breadcrumb">Buku Nota <ChevronRight size={14}/> {navigation.find(x=>x.id===page)?.name}</span><div className="topbar-right"><span className="local-status"><span className={online?'status-dot':'status-dot offline'}/>{native?'Tersimpan di ponsel':online?'Tersimpan di perangkat':'Mode offline'}</span><span className="avatar">H</span></div></header><main className="content">
- {demo&&<div className="demo-banner"><Sparkles size={18}/><span>Mode contoh. Nota di sini tidak disimpan ke buku Ibu.</span><button onClick={()=>{setDemo(false);setPreview(null);setEditor(null)}}>Kembali ke buku Ibu <X size={15}/></button></div>}
- {update&&<div className="notice"><Download size={18}/> Versi baru tersedia. Semua nota sudah tersimpan.<button onClick={()=>window.location.reload()}>Buka versi baru</button></div>}
- {error&&<div className="error" role="alert">{error}<button aria-label="Tutup pesan" onClick={()=>setError('')}><X size={18}/></button></div>}
- {page==='home'&&<><div className="page-heading"><div><div className="eyebrow">SELAMAT DATANG DI BUKU NOTA IBU</div><h1>Hari baik, Ibu <span className="sun">✳</span></h1><p>Urus nota lebih mudah. Kembali ke hal yang Ibu suka.</p></div><span className="date-chip"><CalendarDays size={17}/>{dateLabel(localDate())}</span></div><section className="welcome-card"><div className="welcome-copy"><span className="pill"><Sparkles size={13}/> DARI DAPUR, DENGAN CINTA</span><h2>Rotinya istimewa.<br/>Notanya juga rapi.</h2><p>Cukup isi barang, banyaknya, dan harga.<br/>Nota dengan stempel Hayati langsung siap.</p><Button onClick={()=>setEditor('new')}><Plus size={18}/> Buat Nota Baru <ArrowRight size={18}/></Button></div><div className="welcome-art" aria-hidden="true"><div className="art-sparkle one">✳</div><div className="art-sparkle two">✳</div><div className="mini-receipt"><div className="receipt-mark"><CakeSlice size={22}/><strong>Hayati</strong></div><span>CAKE &amp; BAKERY</span><div className="receipt-rule"/><div className="receipt-lines"><i/><i/><i/></div><div className="receipt-total"><span>Jumlah</span><b>Rp</b></div><img src={stampUrl} alt=""/><div className="receipt-check"><Check size={18}/></div></div><div className="art-caption"><CheckCheck size={14}/> Tinggal isi. Tinggal cetak.</div></div></section><div className="stats-grid"><Stat icon={<Wallet size={21}/>} label="Nilai Nota Bulan Ini" value={rupiah(monthly.reduce((sum,i)=>sum+invoiceTotal(i),0))} foot="Total nilai barang yang dititipkan"/><Stat icon={<FileText size={21}/>} label="Nota Bulan Ini" value={String(monthly.length)} foot="Setiap pengiriman, satu nota"/><Stat icon={<ShieldCheck size={21}/>} label="Semua Nota Tersimpan" value={String(store.invoices.length)} foot="Tersimpan di perangkat Ibu"/></div><div className="home-columns"><section className="card recent-card"><div className="section-heading"><div><h3>Nota Terbaru</h3><p>Catatan kecil dari usaha Ibu.</p></div><button className="text-button" onClick={()=>changePage('invoices')}>Lihat semua <ArrowRight size={15}/></button></div>{recent.length?<InvoiceList invoices={recent} onOpen={setPreview}/>:<div className="empty-state"><span className="empty-icon"><FileText size={26}/></span><h4>Nota pertama menunggu Ibu.</h4><p>Mulai dari satu pengiriman.<br/>Kami bantu menghitung jumlahnya.</p><button className="text-button" onClick={()=>setEditor('new')}>Buat nota pertama <ArrowRight size={16}/></button></div>}</section><section className="card bulk-promo"><span className="mini-icon"><Printer size={22}/></span><h3>Sekali cetak,<br/>semua beres.</h3><p>Pilih tanggal awal dan akhir.<br/>Semua nota jadi satu file PDF.</p><button className="outline-link" onClick={()=>changePage('bulk')}>Cetak Sekaligus <ArrowRight size={17}/></button><div className="period-hint"><CalendarDays size={16}/><span>Cocok untuk periode<br/><b>1-15 &amp; 16-akhir bulan</b></span></div></section></div><div className="bottom-tip"><Leaf size={16}/><span>Satu langkah kecil untuk usaha Ibu setiap hari.</span>{!demo&&store.invoices.length===0&&<button onClick={()=>setDemo(true)}>Lihat contoh aplikasi <ArrowRight size={14}/></button>}</div></>}
- {page==='invoices'&&<><div className="page-heading"><div><span className="eyebrow">CATATAN USAHA IBU</span><h1>Semua Nota</h1><p>Temukan, buka, dan cetak nota kapan saja.</p></div><Button onClick={()=>setEditor('new')}><Plus size={18}/>Buat Nota</Button></div><div className="card"><div className="list-toolbar"><div className="search-box"><Search size={18}/><input aria-label="Cari nota" placeholder="Cari barang, cabang, atau nomor nota..." value={query} onChange={e=>setQuery(e.target.value)}/></div><span>{filtered.length} nota</span></div>{filtered.length?<InvoiceList invoices={filtered} onOpen={setPreview}/>:<div className="empty-state"><FileText size={32}/><h4>{query?'Nota belum ditemukan.':'Belum ada nota.'}</h4><p>{query?'Coba kata pencarian lain.':'Tekan Buat Nota untuk memulai.'}</p></div>}</div></>}
- {page==='bulk'&&<><div className="page-heading"><div><span className="eyebrow">LEBIH RINGKAS, LEBIH MUDAH</span><h1>Cetak Sekaligus</h1><p>Semua nota dalam satu periode, jadi satu file.</p></div><span className="soft-icon"><Printer size={26}/></span></div><div className="bulk-layout"><section className="card range-card"><h3>Pilih Periode</h3><p>Tanggal awal dan akhir ikut disertakan.</p><div className="field-grid"><label>Dari Tanggal<input type="date" value={range.from} onChange={e=>setRange({...range,from:e.target.value})}/></label><label>Sampai Tanggal<input type="date" value={range.to} onChange={e=>setRange({...range,to:e.target.value})}/></label></div><div className="period-buttons"><button onClick={()=>setRange(period(range.from||localDate(),1))}>1-15 bulan ini</button><button onClick={()=>setRange(period(range.from||localDate(),2))}>16-akhir bulan</button></div><label>Cabang<select value={branch} onChange={e=>setBranch(e.target.value)}><option value="">Semua cabang</option>{[...new Set(store.invoices.map(i=>i.branch).filter(Boolean))].sort().map(b=><option key={b}>{b}</option>)}</select></label>{range.from>range.to&&<p className="field-error">Tanggal akhir harus setelah tanggal awal.</p>}<div className="bulk-totals"><span>{selected.length} nota dipilih</span><strong>{rupiah(selected.reduce((sum,i)=>sum+invoiceTotal(i),0))}</strong></div><Button disabled={!selected.length||busy} onClick={()=>download(selected)}><ArrowDownToLine size={18}/>{busy?'Menyiapkan...':native?'PDF / Bagikan':'Unduh Semua PDF'}</Button><Button secondary disabled={!selected.length||busy} onClick={()=>print(selected)}><Printer size={18}/>Cetak Semua Nota</Button><div className="small-note"><CircleHelp size={17}/><p>Setiap nota dimulai di halaman baru. Tetap minta tanda tangan kedua pihak setelah dicetak.</p></div></section><section className="card"><div className="section-heading"><h3>Nota dalam Periode</h3><span className="count-pill">{selected.length}</span></div>{selected.length?<InvoiceList invoices={selected} onOpen={setPreview}/>:<div className="empty-state"><CalendarDays size={30}/><h4>Belum ada nota di periode ini.</h4><p>Pilih tanggal lain atau buat nota baru.</p></div>}</section></div><div className="notice"><FileText size={18}/><span>Bagian ini mencetak nota pengiriman. Kwitansi, memo konsinyasi, dan rekap tagihan KOKARMINA perlu dilengkapi terpisah.</span></div></>}
- {page==='settings'&&<><div className="page-heading"><div><span className="eyebrow">SESUAIKAN SEKALI, PAKAI SETERUSNYA</span><h1>Pengaturan Toko</h1><p>Detail ini otomatis masuk ke nota baru.</p></div><span className="soft-icon"><Settings size={26}/></span></div><SettingsForm shop={store.shop} onSave={shop=>{if(commit({...store,shop}))setToast('Pengaturan toko tersimpan.')}}/><div className="settings-bottom"><section className="card"><span className="mini-icon"><ShieldCheck size={23}/></span><h3>Cadangan Buku Nota</h3><p>Nota disimpan di ponsel ini. Ekspor secara rutin sebelum mengganti ponsel atau menghapus aplikasi. Cadangan dapat diimpor di perangkat lain.</p><div className="button-row"><Button secondary onClick={backup}><Download size={17}/>Ekspor Cadangan</Button><label className="button secondary file-button"><Upload size={17}/>Impor Cadangan<input type="file" accept=".json,application/json" onChange={e=>{if(e.target.files?.[0])restore(e.target.files[0]);e.target.value=''}}/></label></div><small>Impor menambahkan nota. Jika ada nota berbeda dengan nomor sama, impor dibatalkan agar data tidak tertimpa.</small></section><section className="card"><span className="mini-icon"><Smartphone size={23}/></span><h3>{native?'Siap Dipakai Ibu':'Pasang di Layar Utama'}</h3>{native?<p>Tidak perlu akun atau koneksi internet. Buat nota, lalu cetak atau bagikan PDF. Simpan cadangan secara rutin.</p>:<><p><b>iPhone:</b> buka di Safari, tekan Bagikan, lalu Tambahkan ke Layar Utama.</p><p><b>Android:</b> buka di Chrome, pilih Instal Aplikasi di menu.</p><small>Setelah pertama kali dibuka online, aplikasi dapat dipakai offline. Data tidak otomatis berpindah antarperangkat.</small></>}<div className="privacy-line"><CloudOff size={16}/> Tanpa akun. Tanpa iklan.</div></section></div></>}
- </main><footer className="main-footer"><CakeSlice size={14}/> Dibuat untuk Hayati, dengan hati.<span>BUKU NOTA IBU</span></footer></div><nav className="mobile-nav">{navigation.map(({id,name,icon:Icon})=><button key={id} className={page===id?'active':''} onClick={()=>changePage(id)}><Icon size={21}/><span>{id==='invoices'?'Nota':id==='bulk'?'Cetak':name}</span></button>)}</nav></div>
- {toast&&<div className="toast" role="status"><Check size={18}/>{toast}</div>}
- {editor&&<Modal wide title={editor==='new'?'Buat Nota Baru':'Ubah Nota'} onClose={()=>setEditor(null)}>{error&&<div className="error" role="alert">{error}</div>}<InvoiceForm shop={store.shop} invoice={editor==='new'?undefined:editor} onSave={saveInvoice} onCancel={()=>setEditor(null)}/></Modal>}
- {preview&&<Modal wide title="Nota Siap, Ibu." onClose={()=>setPreview(null)}>{error&&<div className="error" role="alert">{error}</div>}<div className="preview-actions"><span><CheckCheck size={16}/>{preview.number}</span><div><button className="icon-button" aria-label="Ubah nota" onClick={()=>{setEditor(preview);setPreview(null)}}><Pencil size={18}/></button><button className="icon-button danger" aria-label="Hapus nota" onClick={()=>setConfirmDelete(preview)}><Trash2 size={18}/></button></div></div><div className="paper-wrapper"><InvoicePaper invoice={preview}/></div><div className="preview-tip"><CircleHelp size={16}/><span>Stempel sudah disertakan. Tanda tangan kedua pihak tetap diisi setelah dicetak.</span></div><div className="modal-footer"><Button secondary disabled={busy} onClick={()=>download([preview])}><Share2 size={17}/>{native?'PDF / Bagikan':'Unduh PDF'}</Button><Button disabled={busy} onClick={()=>print([preview])}><Printer size={17}/>Cetak Nota</Button></div></Modal>}
- {confirmDelete&&<Modal title="Hapus nota ini?" onClose={()=>setConfirmDelete(null)}><div className="confirm-body"><p>Nota <b>{confirmDelete.number}</b> akan dihapus dari buku Ibu. Simpan PDF atau cadangan terlebih dahulu jika masih diperlukan.</p><div className="button-row"><Button secondary onClick={()=>setConfirmDelete(null)}>Batal</Button><Button className="danger-button" onClick={()=>{if(commit({...store,invoices:store.invoices.filter(i=>i.id!==confirmDelete.id)})){setConfirmDelete(null);setPreview(null);setToast('Nota dihapus.')}}}>Hapus Nota</Button></div></div></Modal>}
- <div className="print-area">{printInvoices.flatMap(invoice=>{const chunks=Array.from({length:Math.ceil(invoice.items.length/16)},(_,n)=>invoice.items.slice(n*16,n*16+16));return chunks.map((items,n)=><InvoicePaper key={invoice.id+'-'+n} invoice={invoice} items={items} continued={n>0} last={n===chunks.length-1}/>)})}</div></>
+const initial = readStore();
+function exampleStore(): Store {
+  const today = localDate();
+  return {
+    ...emptyStore(),
+    nextSequence: 4,
+    invoices: [
+      { name: "Bolen Cokelat", quantity: 40, price: 5000 },
+      { name: "Roti Keju", quantity: 30, price: 6000 },
+      { name: "Brownies", quantity: 12, price: 25000 },
+    ].map((item, index) => ({
+      id: "example-" + index,
+      number: invoiceNumber(today, index + 1),
+      date: today,
+      recipient: "KOKARMINA",
+      branch: "Cabang Contoh",
+      receiver: "",
+      notes: "CONTOH - Bukan nota penagihan.",
+      items: [item],
+      shop: { ...defaultShop },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })),
+  };
 }
-function Stat({icon,label,value,foot}:{icon:ReactNode;label:string;value:string;foot:string}){return <section className="stat card"><div className="stat-heading"><span>{label}</span><span className="stat-icon">{icon}</span></div><strong>{value}</strong><small>{foot}</small></section>}
-function InvoiceList({invoices,onOpen}:{invoices:Invoice[];onOpen:(i:Invoice)=>void}){return <div className="invoice-list">{invoices.map(i=><button className="invoice-row" key={i.id} onClick={()=>onOpen(i)}><span className="invoice-row-icon"><FileText size={20}/></span><span className="invoice-row-info"><strong>{i.recipient}{i.branch?' - '+i.branch:''}</strong><small>{i.number} <span>·</span> {dateLabel(i.date)}</small><small className="item-preview">{i.items.map(item=>item.name).join(', ')}</small></span><span className="invoice-row-amount">{rupiah(invoiceTotal(i))}<small>{i.items.length} jenis barang</small></span><ChevronRight size={17}/></button>)}</div>}
-function InvoiceForm({shop,invoice,onSave,onCancel}:{shop:Shop;invoice?:Invoice;onSave:(v:Omit<Invoice,'id'|'number'|'createdAt'|'updatedAt'>,old?:Invoice)=>void;onCancel:()=>void}){
- const [date,setDate]=useState(invoice?.date||localDate()),[recipient,setRecipient]=useState(invoice?.recipient||shop.recipient),[branch,setBranch]=useState(invoice?.branch||shop.branch),[receiver,setReceiver]=useState(invoice?.receiver||shop.receiver),[supplier,setSupplier]=useState(invoice?.shop.supplier||shop.supplier||shop.name),[notes,setNotes]=useState(invoice?.notes||''),[items,setItems]=useState<Item[]>(invoice?.items.map(i=>({...i}))||[{name:'',quantity:1,price:0}]),[error,setError]=useState('')
- function itemChange(index:number,key:keyof Item,value:string){setItems(items.map((item,n)=>n===index?{...item,[key]:key==='name'?value:Number(value)}:item))}
- function submit(e:FormEvent){e.preventDefault();if(!validateItems(items)){setError('Isi nama barang, banyaknya lebih dari 0 (maks. 2 desimal), dan harga Rupiah bulat.');return}onSave({date,recipient:recipient.trim(),branch:branch.trim(),receiver:receiver.trim(),notes:notes.trim(),items:items.map(i=>({...i,name:i.name.trim()})),shop:{...(invoice?.shop||shop),supplier:supplier.trim()}},invoice)}
- return <form onSubmit={submit}><div className="invoice-form"><div className="form-intro"><span className="mini-icon"><FileText size={20}/></span><p>Satu pengiriman, satu nota.<br/><b>Jumlah akan dihitung otomatis.</b></p></div><details className="delivery-details"><summary><span>Untuk: <b>{recipient}{branch?' - '+branch:''}</b></span><span>Ubah Detail</span></summary><div className="field-grid"><label>Tanggal Pengiriman<input type="date" required value={date} onChange={e=>setDate(e.target.value)}/></label><label>Untuk / Pelanggan<input required maxLength={300} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="KOKARMINA"/></label><label>Cabang / Toko (opsional)<input maxLength={300} value={branch} onChange={e=>setBranch(e.target.value)} placeholder="Nama cabang tujuan"/></label><label>Nama Supplier<input required maxLength={300} value={supplier} onChange={e=>setSupplier(e.target.value)} placeholder="Nama Ibu / supplier"/></label></div></details><div className="form-section-title"><h3>Barang yang Dikirim</h3><span>{items.length} jenis barang</span></div><div className="item-form-labels"><span>Nama Barang</span><span>Banyaknya</span><span>Harga @ (Rp)</span><span>Jumlah</span><span/></div><div className="item-form">{items.map((item,index)=><div className="item-edit-row" key={index}><label><span>Nama Barang</span><input aria-label={`Nama barang ${index+1}`} required maxLength={150} placeholder="Contoh: Bolen Cokelat" value={item.name} onChange={e=>itemChange(index,'name',e.target.value)}/></label><label><span>Banyaknya</span><input aria-label={`Banyaknya ${index+1}`} type="number" inputMode="decimal" min="0.01" max="999999" step="0.01" required value={item.quantity||''} onChange={e=>itemChange(index,'quantity',e.target.value)}/></label><label><span>Harga @ (Rp)</span><input aria-label={`Harga satuan ${index+1}`} type="number" inputMode="numeric" min="0" max="1000000000" step="1" required value={item.price} placeholder="0" onChange={e=>itemChange(index,'price',e.target.value)}/></label><span className="line-amount">{rupiah(Math.round(item.quantity*item.price))}</span><button type="button" className="icon-button danger" aria-label={`Hapus barang ${index+1}`} disabled={items.length===1} onClick={()=>setItems(items.filter((_,n)=>n!==index))}><Trash2 size={17}/></button></div>)}</div><button type="button" className="text-button add-item" disabled={items.length>=100} onClick={()=>setItems([...items,{name:'',quantity:1,price:0}])}><Plus size={17}/>Tambah Barang</button><div className="form-total"><span>Jumlah Total</span><strong>{rupiah(invoiceTotal({items}))}</strong></div><div className="field-grid"><label>Nama Penerima (boleh diisi saat tanda tangan)<input maxLength={300} value={receiver} onChange={e=>setReceiver(e.target.value)} placeholder="Nama petugas penerima"/></label><label>Catatan (opsional)<textarea maxLength={1500} rows={2} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Catatan untuk pengiriman ini"/></label></div><div className="preview-tip"><ShieldCheck size={17}/><span>Nomor nota dan stempel Hayati akan ditambahkan otomatis.</span></div>{error&&<p className="field-error" role="alert">{error}</p>}</div><div className="modal-footer"><Button type="button" secondary onClick={onCancel}>Batal</Button><Button type="submit"><Check size={18}/>Simpan &amp; Lihat Nota</Button></div></form>
+function Button({
+  children,
+  secondary = false,
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { secondary?: boolean }) {
+  return (
+    <button
+      className={`${secondary ? "button secondary" : "button"} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
 }
-function SettingsForm({shop,onSave}:{shop:Shop;onSave:(s:Shop)=>void}){
- const [form,setForm]=useState(shop),[error,setError]=useState('')
- useEffect(()=>setForm(shop),[shop])
- const field=(key:keyof Shop,value:string)=>setForm({...form,[key]:value})
- async function stamp(file:File){try{if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>1200000)throw new Error('Pilih PNG, JPG, atau WebP maksimal 1,2 MB.');const data=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file)});field('stamp',data);setError('')}catch(e){setError(e instanceof Error?e.message:'Gambar belum dapat dibaca.')}}
- return <form className="card settings-form" onSubmit={e=>{e.preventDefault();onSave({...form,name:form.name.trim()})}}><div className="section-heading"><h3>Identitas Toko</h3><span className="pill muted">OTOMATIS DI NOTA</span></div><div className="settings-grid"><div className="field-grid"><label>Nama Usaha<input required maxLength={300} value={form.name} onChange={e=>field('name',e.target.value)}/></label><label>Nomor Telepon<input type="tel" maxLength={300} value={form.phone} onChange={e=>field('phone',e.target.value)}/></label><label className="full-field">Alamat Toko<textarea maxLength={1000} rows={2} value={form.address} onChange={e=>field('address',e.target.value)}/></label><label>Kota<input maxLength={300} value={form.city} onChange={e=>field('city',e.target.value)}/></label><label>Nama Supplier<input maxLength={300} value={form.supplier} onChange={e=>field('supplier',e.target.value)} placeholder="Nama lengkap Ibu"/></label><label>Pelanggan Utama<input maxLength={300} value={form.recipient} onChange={e=>field('recipient',e.target.value)}/></label><label>Cabang Utama<input maxLength={300} value={form.branch} onChange={e=>field('branch',e.target.value)} placeholder="Cabang yang biasa menerima"/></label><label className="full-field">Nama Penerima Utama (opsional)<input maxLength={300} value={form.receiver} onChange={e=>field('receiver',e.target.value)}/></label></div><div className="stamp-settings"><h4>Stempel Toko</h4><div className="stamp-box"><img src={form.stamp||stampUrl} alt="Stempel toko"/></div><p>Stempel ini otomatis disertakan pada setiap nota baru.</p><label className="button secondary file-button"><Upload size={16}/>Ganti Stempel<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{if(e.target.files?.[0])stamp(e.target.files[0]);e.target.value=''}}/></label>{form.stamp&&<button type="button" className="text-button" onClick={()=>field('stamp','')}>Gunakan stempel Hayati</button>}<small>PNG transparan paling bagus.<br/>Maksimal 1,2 MB.</small></div></div>{error&&<p className="field-error" role="alert">{error}</p>}<div className="settings-save"><span>Nota lama tetap memakai detail saat nota dibuat.</span><Button type="submit"><Check size={17}/>Simpan Pengaturan</Button></div></form>
+function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const oldFocus = document.activeElement as HTMLElement;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    ref.current?.focus();
+    const listener = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab") {
+        const targets = ref.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),input,textarea,select,[tabindex="0"]',
+        );
+        if (!targets?.length) return;
+        const first = targets[0],
+          last = targets[targets.length - 1];
+        if (
+          e.shiftKey &&
+          (document.activeElement === first ||
+            document.activeElement === ref.current)
+        ) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", listener);
+    return () => {
+      document.body.style.overflow = oldOverflow;
+      document.removeEventListener("keydown", listener);
+      oldFocus?.focus();
+    };
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop">
+      <div
+        className={`modal ${wide ? "wide" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        ref={ref}
+      >
+        <header className="modal-header">
+          <div>
+            <span className="eyebrow">BUKU NOTA IBU</span>
+            <h2>{title}</h2>
+          </div>
+          <button className="icon-button" aria-label="Tutup" onClick={onClose}>
+            <X />
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+export default function App() {
+  const [real, setReal] = useState<Store>(initial.data),
+    [demo, setDemo] = useState(false),
+    [demoData, setDemoData] = useState(exampleStore),
+    [page, setPage] = useState<Page>("home");
+  const store = demo ? demoData : real;
+  const [editor, setEditor] = useState<Invoice | "new" | null>(null),
+    [preview, setPreview] = useState<Invoice | null>(null),
+    [toast, setToast] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [query, setQuery] = useState(""),
+    [online, setOnline] = useState(navigator.onLine),
+    [update, setUpdate] = useState(false);
+  const [range, setRange] = useState(() => period()),
+    [branch, setBranch] = useState(""),
+    [printInvoices, setPrintInvoices] = useState<Invoice[]>([]),
+    [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => {
+    const connectivity = () => setOnline(navigator.onLine);
+    const updated = () => setUpdate(true);
+    const sync = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          setReal(validateStore(JSON.parse(e.newValue)));
+        } catch {
+          setError(
+            "Data dari tab lain tidak valid. Tutup tab lain sebelum melanjutkan.",
+          );
+        }
+      }
+    };
+    window.addEventListener("online", connectivity);
+    window.addEventListener("offline", connectivity);
+    window.addEventListener("storage", sync);
+    window.addEventListener("hayati-update-ready", updated);
+    return () => {
+      window.removeEventListener("online", connectivity);
+      window.removeEventListener("offline", connectivity);
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("hayati-update-ready", updated);
+    };
+  }, []);
+  function commit(next: Store) {
+    try {
+      validateStore(next);
+      if (!demo) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        setReal(next);
+      } else setDemoData(next);
+      return true;
+    } catch (e) {
+      setError(
+        e instanceof DOMException
+          ? "Penyimpanan penuh. Ekspor cadangan, lalu kosongkan ruang di ponsel."
+          : e instanceof Error
+            ? e.message
+            : "Nota belum berhasil disimpan. Silakan coba lagi.",
+      );
+      return false;
+    }
+  }
+  function changePage(next: Page) {
+    setPage(next);
+    setError("");
+    window.scrollTo(0, 0);
+  }
+  const selected = selectInvoices(store.invoices, range.from, range.to, branch);
+  const monthly = store.invoices.filter((i) =>
+    i.date.startsWith(localDate().slice(0, 7)),
+  );
+  const recent = [...store.invoices]
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),
+    )
+    .slice(0, 5);
+  const filtered = [...store.invoices]
+    .filter((i) =>
+      `${i.number} ${i.recipient} ${i.branch} ${i.items.map((x) => x.name).join(" ")}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+    )
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt),
+    );
+  async function download(invoices: Invoice[], share = false) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const doc = await makePdf(invoices);
+      const filename =
+        (demo ? "CONTOH-" : "") +
+        (invoices.length === 1
+          ? invoices[0].number
+          : `Hayati-${range.from}-sampai-${range.to}`) +
+        ".pdf";
+      const blob = doc.output("blob");
+      if (share && !native) {
+        const file = new File([blob], filename, { type: "application/pdf" });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Nota Hayati" });
+          return;
+        }
+      }
+      await exportFile(blob, filename);
+      setToast(
+        native
+          ? "PDF siap. Pilih tempat menyimpan atau membagikan."
+          : "PDF berhasil dibuat. Simpan atau bagikan dari folder unduhan.",
+      );
+    } catch (e) {
+      if (!(e instanceof Error && e.name === "AbortError"))
+        setError(
+          e instanceof Error
+            ? e.message
+            : "PDF belum berhasil dibuat. Silakan coba lagi.",
+        );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function print(invoices: Invoice[]) {
+    if (!invoices.length || busy) return;
+    if (native) {
+      setBusy(true);
+      try {
+        await printNativePdf((await makePdf(invoices)).output("blob"));
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Belum bisa membuka pencetakan. Gunakan PDF / Bagikan.",
+        );
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setPrintInvoices(invoices);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    try {
+      window.print();
+    } catch {
+      setError("Gunakan Unduh PDF, lalu cetak dari pembaca PDF.");
+    }
+  }
+  async function backup() {
+    try {
+      await exportFile(
+        new Blob([JSON.stringify(store, null, 2)], {
+          type: "application/json",
+        }),
+        `Hayati-cadangan-${localDate()}.json`,
+      );
+      setToast("Cadangan siap disimpan. Simpan di tempat yang aman.");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Cadangan belum berhasil diekspor.",
+      );
+    }
+  }
+  async function restore(file: File) {
+    try {
+      if (file.size > 25000000)
+        throw new Error(
+          "File terlalu besar. Pilih file cadangan Hayati maksimal 25 MB.",
+        );
+      const incoming = validateStore(JSON.parse(await file.text()));
+      const next = mergeBackup(store, incoming);
+      if (commit(next))
+        setToast(
+          `${next.invoices.length - store.invoices.length} nota ditambahkan dari cadangan.`,
+        );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "File cadangan belum dapat dibaca.",
+      );
+    }
+  }
+  function saveInvoice(
+    values: Omit<Invoice, "id" | "number" | "createdAt" | "updatedAt">,
+    old?: Invoice,
+  ) {
+    const now = new Date().toISOString();
+    let sequence = store.nextSequence;
+    while (
+      store.invoices.some(
+        (i) => i.number === invoiceNumber(values.date, sequence),
+      )
+    )
+      sequence++;
+    const invoice: Invoice = {
+      ...values,
+      id: old?.id || crypto.randomUUID(),
+      number: old?.number || invoiceNumber(values.date, sequence),
+      createdAt: old?.createdAt || now,
+      updatedAt: now,
+    };
+    const rememberedShop = old
+      ? store.shop
+      : {
+          ...store.shop,
+          supplier: store.shop.supplier || values.shop.supplier,
+          branch: store.shop.branch || values.branch,
+        };
+    const next = {
+      ...store,
+      shop: rememberedShop,
+      invoices: old
+        ? store.invoices.map((i) => (i.id === old.id ? invoice : i))
+        : [...store.invoices, invoice],
+      nextSequence: old ? store.nextSequence : sequence + 1,
+    };
+    if (commit(next)) {
+      setEditor(null);
+      setPreview(invoice);
+      setToast(
+        old ? "Perubahan nota tersimpan." : "Nota tersimpan. Siap dicetak!",
+      );
+    }
+  }
+  if (initial.error)
+    return (
+      <main className="recovery">
+        <ShieldCheck size={40} />
+        <h1>Data Ibu tetap aman di sini.</h1>
+        <p>{initial.error}</p>
+        <Button
+          onClick={() =>
+            exportFile(
+              new Blob([localStorage.getItem(STORAGE_KEY) || ""], {
+                type: "text/plain",
+              }),
+              "Hayati-data-pemulihan.txt",
+            )
+          }
+        >
+          Unduh data untuk pemulihan
+        </Button>
+        <p>Minta bantuan sebelum menghapus data aplikasi.</p>
+      </main>
+    );
+  return (
+    <>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <span className="brand-icon">
+              <CakeSlice size={26} />
+            </span>
+            <div>
+              <strong>
+                nota<span>hayati</span>
+              </strong>
+              <small>BUKU NOTA IBU</small>
+            </div>
+          </div>
+          <span className="nav-label">TOKO IBU</span>
+          <nav>
+            {navigation.map(({ id, name, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => changePage(id)}
+                className={page === id ? "active" : ""}
+              >
+                <Icon size={20} />
+                <span>{name}</span>
+                {page === id && <span className="nav-dot" />}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-note">
+            <span className="mini-icon">
+              <FolderHeart size={21} />
+            </span>
+            <strong>
+              Catatan rapi,
+              <br />
+              hati lebih tenang.
+            </strong>
+            <p>Semua nota toko dalam satu tempat.</p>
+          </div>
+          <div className="shop-badge">
+            <span>H</span>
+            <div>
+              <strong>Hayati</strong>
+              <small>Cake &amp; Bakery</small>
+            </div>
+            <Leaf size={18} />
+          </div>
+        </aside>
+        <div className="main-shell">
+          <header className="topbar">
+            <span className="breadcrumb">
+              Buku Nota <ChevronRight size={14} />{" "}
+              {navigation.find((x) => x.id === page)?.name}
+            </span>
+            <div className="topbar-right">
+              <span className="local-status">
+                <span
+                  className={online ? "status-dot" : "status-dot offline"}
+                />
+                {native
+                  ? "Tersimpan di ponsel"
+                  : online
+                    ? "Tersimpan di perangkat"
+                    : "Mode offline"}
+              </span>
+              <span className="avatar">H</span>
+            </div>
+          </header>
+          <main className="content">
+            {demo && (
+              <div className="demo-banner">
+                <Sparkles size={18} />
+                <span>
+                  Mode contoh. Nota di sini tidak disimpan ke buku Ibu.
+                </span>
+                <button
+                  onClick={() => {
+                    setDemo(false);
+                    setPreview(null);
+                    setEditor(null);
+                  }}
+                >
+                  Kembali ke buku Ibu <X size={15} />
+                </button>
+              </div>
+            )}
+            {update && (
+              <div className="notice">
+                <Download size={18} /> Versi baru tersedia. Semua nota sudah
+                tersimpan.
+                <button onClick={() => applyWebUpdate()}>
+                  Buka versi baru
+                </button>
+              </div>
+            )}
+            {error && (
+              <div className="error" role="alert">
+                {error}
+                <button aria-label="Tutup pesan" onClick={() => setError("")}>
+                  <X size={18} />
+                </button>
+              </div>
+            )}
+            {page === "home" && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <div className="eyebrow">
+                      SELAMAT DATANG DI BUKU NOTA IBU
+                    </div>
+                    <h1>
+                      Hari baik, Ibu <span className="sun">✳</span>
+                    </h1>
+                    <p>Urus nota lebih mudah. Kembali ke hal yang Ibu suka.</p>
+                  </div>
+                  <span className="date-chip">
+                    <CalendarDays size={17} />
+                    {dateLabel(localDate())}
+                  </span>
+                </div>
+                <section className="welcome-card">
+                  <div className="welcome-copy">
+                    <span className="pill">
+                      <Sparkles size={13} /> DARI DAPUR, DENGAN CINTA
+                    </span>
+                    <h2>
+                      Rotinya istimewa.
+                      <br />
+                      Notanya juga rapi.
+                    </h2>
+                    <p>
+                      Cukup isi barang, banyaknya, dan harga.
+                      <br />
+                      Nota dengan stempel Hayati langsung siap.
+                    </p>
+                    <Button onClick={() => setEditor("new")}>
+                      <Plus size={18} /> Buat Nota Baru <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                  <div className="welcome-art" aria-hidden="true">
+                    <div className="art-sparkle one">✳</div>
+                    <div className="art-sparkle two">✳</div>
+                    <div className="mini-receipt">
+                      <div className="receipt-mark">
+                        <CakeSlice size={22} />
+                        <strong>Hayati</strong>
+                      </div>
+                      <span>CAKE &amp; BAKERY</span>
+                      <div className="receipt-rule" />
+                      <div className="receipt-lines">
+                        <i />
+                        <i />
+                        <i />
+                      </div>
+                      <div className="receipt-total">
+                        <span>Jumlah</span>
+                        <b>Rp</b>
+                      </div>
+                      <img src={stampUrl} alt="" />
+                      <div className="receipt-check">
+                        <Check size={18} />
+                      </div>
+                    </div>
+                    <div className="art-caption">
+                      <CheckCheck size={14} /> Tinggal isi. Tinggal cetak.
+                    </div>
+                  </div>
+                </section>
+                <div className="stats-grid">
+                  <Stat
+                    icon={<Wallet size={21} />}
+                    label="Nilai Nota Bulan Ini"
+                    value={rupiah(
+                      monthly.reduce((sum, i) => sum + invoiceTotal(i), 0),
+                    )}
+                    foot="Total nilai barang yang dititipkan"
+                  />
+                  <Stat
+                    icon={<FileText size={21} />}
+                    label="Nota Bulan Ini"
+                    value={String(monthly.length)}
+                    foot="Setiap pengiriman, satu nota"
+                  />
+                  <Stat
+                    icon={<ShieldCheck size={21} />}
+                    label="Semua Nota Tersimpan"
+                    value={String(store.invoices.length)}
+                    foot="Tersimpan di perangkat Ibu"
+                  />
+                </div>
+                <div className="home-columns">
+                  <section className="card recent-card">
+                    <div className="section-heading">
+                      <div>
+                        <h3>Nota Terbaru</h3>
+                        <p>Catatan kecil dari usaha Ibu.</p>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => changePage("invoices")}
+                      >
+                        Lihat semua <ArrowRight size={15} />
+                      </button>
+                    </div>
+                    {recent.length ? (
+                      <InvoiceList invoices={recent} onOpen={setPreview} />
+                    ) : (
+                      <div className="empty-state">
+                        <span className="empty-icon">
+                          <FileText size={26} />
+                        </span>
+                        <h4>Nota pertama menunggu Ibu.</h4>
+                        <p>
+                          Mulai dari satu pengiriman.
+                          <br />
+                          Kami bantu menghitung jumlahnya.
+                        </p>
+                        <button
+                          className="text-button"
+                          onClick={() => setEditor("new")}
+                        >
+                          Buat nota pertama <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                  <section className="card bulk-promo">
+                    <span className="mini-icon">
+                      <Printer size={22} />
+                    </span>
+                    <h3>
+                      Sekali cetak,
+                      <br />
+                      semua beres.
+                    </h3>
+                    <p>
+                      Pilih tanggal awal dan akhir.
+                      <br />
+                      Semua nota jadi satu file PDF.
+                    </p>
+                    <button
+                      className="outline-link"
+                      onClick={() => changePage("bulk")}
+                    >
+                      Cetak Sekaligus <ArrowRight size={17} />
+                    </button>
+                    <div className="period-hint">
+                      <CalendarDays size={16} />
+                      <span>
+                        Cocok untuk periode
+                        <br />
+                        <b>1-15 &amp; 16-akhir bulan</b>
+                      </span>
+                    </div>
+                  </section>
+                </div>
+                <div className="bottom-tip">
+                  <Leaf size={16} />
+                  <span>Satu langkah kecil untuk usaha Ibu setiap hari.</span>
+                  {!demo && store.invoices.length === 0 && (
+                    <button onClick={() => setDemo(true)}>
+                      Lihat contoh aplikasi <ArrowRight size={14} />
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            {page === "invoices" && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <span className="eyebrow">CATATAN USAHA IBU</span>
+                    <h1>Semua Nota</h1>
+                    <p>Temukan, buka, dan cetak nota kapan saja.</p>
+                  </div>
+                  <Button onClick={() => setEditor("new")}>
+                    <Plus size={18} />
+                    Buat Nota
+                  </Button>
+                </div>
+                <div className="card">
+                  <div className="list-toolbar">
+                    <div className="search-box">
+                      <Search size={18} />
+                      <input
+                        aria-label="Cari nota"
+                        placeholder="Cari barang, cabang, atau nomor nota..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                      />
+                    </div>
+                    <span>{filtered.length} nota</span>
+                  </div>
+                  {filtered.length ? (
+                    <InvoiceList invoices={filtered} onOpen={setPreview} />
+                  ) : (
+                    <div className="empty-state">
+                      <FileText size={32} />
+                      <h4>
+                        {query ? "Nota belum ditemukan." : "Belum ada nota."}
+                      </h4>
+                      <p>
+                        {query
+                          ? "Coba kata pencarian lain."
+                          : "Tekan Buat Nota untuk memulai."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {page === "bulk" && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <span className="eyebrow">LEBIH RINGKAS, LEBIH MUDAH</span>
+                    <h1>Cetak Sekaligus</h1>
+                    <p>Semua nota dalam satu periode, jadi satu file.</p>
+                  </div>
+                  <span className="soft-icon">
+                    <Printer size={26} />
+                  </span>
+                </div>
+                <div className="bulk-layout">
+                  <section className="card range-card">
+                    <h3>Pilih Periode</h3>
+                    <p>Tanggal awal dan akhir ikut disertakan.</p>
+                    <div className="field-grid">
+                      <label>
+                        Dari Tanggal
+                        <input
+                          type="date"
+                          value={range.from}
+                          onChange={(e) =>
+                            setRange({ ...range, from: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Sampai Tanggal
+                        <input
+                          type="date"
+                          value={range.to}
+                          onChange={(e) =>
+                            setRange({ ...range, to: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="period-buttons">
+                      <button
+                        onClick={() =>
+                          setRange(period(range.from || localDate(), 1))
+                        }
+                      >
+                        1-15 bulan ini
+                      </button>
+                      <button
+                        onClick={() =>
+                          setRange(period(range.from || localDate(), 2))
+                        }
+                      >
+                        16-akhir bulan
+                      </button>
+                    </div>
+                    <label>
+                      Cabang
+                      <select
+                        value={branch}
+                        onChange={(e) => setBranch(e.target.value)}
+                      >
+                        <option value="">Semua cabang</option>
+                        {[
+                          ...new Set(
+                            store.invoices.map((i) => i.branch).filter(Boolean),
+                          ),
+                        ]
+                          .sort()
+                          .map((b) => (
+                            <option key={b}>{b}</option>
+                          ))}
+                      </select>
+                    </label>
+                    {range.from > range.to && (
+                      <p className="field-error">
+                        Tanggal akhir harus setelah tanggal awal.
+                      </p>
+                    )}
+                    <div className="bulk-totals">
+                      <span>{selected.length} nota dipilih</span>
+                      <strong>
+                        {rupiah(
+                          selected.reduce((sum, i) => sum + invoiceTotal(i), 0),
+                        )}
+                      </strong>
+                    </div>
+                    <Button
+                      disabled={!selected.length || busy}
+                      onClick={() => download(selected)}
+                    >
+                      <ArrowDownToLine size={18} />
+                      {busy
+                        ? "Menyiapkan..."
+                        : native
+                          ? "PDF / Bagikan"
+                          : "Unduh Semua PDF"}
+                    </Button>
+                    <Button
+                      secondary
+                      disabled={!selected.length || busy}
+                      onClick={() => print(selected)}
+                    >
+                      <Printer size={18} />
+                      Cetak Semua Nota
+                    </Button>
+                    <div className="small-note">
+                      <CircleHelp size={17} />
+                      <p>
+                        Setiap nota dimulai di halaman baru. Tetap minta tanda
+                        tangan kedua pihak setelah dicetak.
+                      </p>
+                    </div>
+                  </section>
+                  <section className="card">
+                    <div className="section-heading">
+                      <h3>Nota dalam Periode</h3>
+                      <span className="count-pill">{selected.length}</span>
+                    </div>
+                    {selected.length ? (
+                      <InvoiceList invoices={selected} onOpen={setPreview} />
+                    ) : (
+                      <div className="empty-state">
+                        <CalendarDays size={30} />
+                        <h4>Belum ada nota di periode ini.</h4>
+                        <p>Pilih tanggal lain atau buat nota baru.</p>
+                      </div>
+                    )}
+                  </section>
+                </div>
+                <div className="notice">
+                  <FileText size={18} />
+                  <span>
+                    Bagian ini mencetak nota pengiriman. Kwitansi, memo
+                    konsinyasi, dan rekap tagihan KOKARMINA perlu dilengkapi
+                    terpisah.
+                  </span>
+                </div>
+              </>
+            )}
+            {page === "settings" && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <span className="eyebrow">
+                      SESUAIKAN SEKALI, PAKAI SETERUSNYA
+                    </span>
+                    <h1>Pengaturan Toko</h1>
+                    <p>Detail ini otomatis masuk ke nota baru.</p>
+                  </div>
+                  <span className="soft-icon">
+                    <Settings size={26} />
+                  </span>
+                </div>
+                <SettingsForm
+                  shop={store.shop}
+                  onSave={(shop) => {
+                    if (commit({ ...store, shop }))
+                      setToast("Pengaturan toko tersimpan.");
+                  }}
+                />
+                <div className="settings-bottom">
+                  <section className="card">
+                    <span className="mini-icon">
+                      <ShieldCheck size={23} />
+                    </span>
+                    <h3>Cadangan Buku Nota</h3>
+                    <p>
+                      Nota disimpan di ponsel ini. Ekspor secara rutin sebelum
+                      mengganti ponsel atau menghapus aplikasi. Cadangan dapat
+                      diimpor di perangkat lain.
+                    </p>
+                    <div className="button-row">
+                      <Button secondary onClick={backup}>
+                        <Download size={17} />
+                        Ekspor Cadangan
+                      </Button>
+                      <label className="button secondary file-button">
+                        <Upload size={17} />
+                        Impor Cadangan
+                        <input
+                          type="file"
+                          accept=".json,application/json"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) restore(e.target.files[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <small>
+                      Impor menambahkan nota. Jika ada nota berbeda dengan nomor
+                      sama, impor dibatalkan agar data tidak tertimpa.
+                    </small>
+                  </section>
+                  <section className="card">
+                    <span className="mini-icon">
+                      <Smartphone size={23} />
+                    </span>
+                    <h3>
+                      {native ? "Siap Dipakai Ibu" : "Pasang di Layar Utama"}
+                    </h3>
+                    {native ? (
+                      <p>
+                        Tidak perlu akun atau koneksi internet. Buat nota, lalu
+                        cetak atau bagikan PDF. Simpan cadangan secara rutin.
+                      </p>
+                    ) : (
+                      <>
+                        <p>
+                          <b>iPhone:</b> buka di Safari, tekan Bagikan, lalu
+                          Tambahkan ke Layar Utama.
+                        </p>
+                        <p>
+                          <b>Android:</b> buka di Chrome, pilih Instal Aplikasi
+                          di menu.
+                        </p>
+                        <small>
+                          Setelah pertama kali dibuka online, aplikasi dapat
+                          dipakai offline. Data tidak otomatis berpindah
+                          antarperangkat.
+                        </small>
+                      </>
+                    )}
+                    <div className="privacy-line">
+                      <CloudOff size={16} /> Tanpa akun. Tanpa iklan.
+                    </div>
+                  </section>
+                </div>
+              </>
+            )}
+          </main>
+          <footer className="main-footer">
+            <CakeSlice size={14} /> Dibuat untuk Hayati, dengan hati.
+            <span>BUKU NOTA IBU</span>
+          </footer>
+        </div>
+        <nav className="mobile-nav">
+          {navigation.map(({ id, name, icon: Icon }) => (
+            <button
+              key={id}
+              className={page === id ? "active" : ""}
+              onClick={() => changePage(id)}
+            >
+              <Icon size={21} />
+              <span>
+                {id === "invoices" ? "Nota" : id === "bulk" ? "Cetak" : name}
+              </span>
+            </button>
+          ))}
+        </nav>
+      </div>
+      {toast && (
+        <div className="toast" role="status">
+          <Check size={18} />
+          {toast}
+        </div>
+      )}
+      {editor && (
+        <Modal
+          wide
+          title={editor === "new" ? "Buat Nota Baru" : "Ubah Nota"}
+          onClose={() => setEditor(null)}
+        >
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <InvoiceForm
+            shop={store.shop}
+            invoice={editor === "new" ? undefined : editor}
+            onSave={saveInvoice}
+            onCancel={() => setEditor(null)}
+          />
+        </Modal>
+      )}
+      {preview && (
+        <Modal wide title="Nota Siap, Ibu." onClose={() => setPreview(null)}>
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="preview-actions">
+            <span>
+              <CheckCheck size={16} />
+              {preview.number}
+            </span>
+            <div>
+              <button
+                className="icon-button"
+                aria-label="Ubah nota"
+                onClick={() => {
+                  setEditor(preview);
+                  setPreview(null);
+                }}
+              >
+                <Pencil size={18} />
+              </button>
+              <button
+                className="icon-button danger"
+                aria-label="Hapus nota"
+                onClick={() => setConfirmDelete(preview)}
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="paper-wrapper">
+            <InvoicePaper invoice={preview} />
+          </div>
+          <div className="preview-tip">
+            <CircleHelp size={16} />
+            <span>
+              Stempel sudah disertakan. Tanda tangan kedua pihak tetap diisi
+              setelah dicetak.
+            </span>
+          </div>
+          <div className="modal-footer">
+            <Button
+              secondary
+              disabled={busy}
+              onClick={() => download([preview])}
+            >
+              <Share2 size={17} />
+              {native ? "PDF / Bagikan" : "Unduh PDF"}
+            </Button>
+            <Button disabled={busy} onClick={() => print([preview])}>
+              <Printer size={17} />
+              Cetak Nota
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {confirmDelete && (
+        <Modal title="Hapus nota ini?" onClose={() => setConfirmDelete(null)}>
+          <div className="confirm-body">
+            <p>
+              Nota <b>{confirmDelete.number}</b> akan dihapus dari buku Ibu.
+              Simpan PDF atau cadangan terlebih dahulu jika masih diperlukan.
+            </p>
+            <div className="button-row">
+              <Button secondary onClick={() => setConfirmDelete(null)}>
+                Batal
+              </Button>
+              <Button
+                className="danger-button"
+                onClick={() => {
+                  if (
+                    commit({
+                      ...store,
+                      invoices: store.invoices.filter(
+                        (i) => i.id !== confirmDelete.id,
+                      ),
+                    })
+                  ) {
+                    setConfirmDelete(null);
+                    setPreview(null);
+                    setToast("Nota dihapus.");
+                  }
+                }}
+              >
+                Hapus Nota
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      <div className="print-area">
+        {printInvoices.flatMap((invoice) => {
+          const chunks = Array.from(
+            { length: Math.ceil(invoice.items.length / 16) },
+            (_, n) => invoice.items.slice(n * 16, n * 16 + 16),
+          );
+          return chunks.map((items, n) => (
+            <InvoicePaper
+              key={invoice.id + "-" + n}
+              invoice={invoice}
+              items={items}
+              continued={n > 0}
+              last={n === chunks.length - 1}
+            />
+          ));
+        })}
+      </div>
+    </>
+  );
+}
+function Stat({
+  icon,
+  label,
+  value,
+  foot,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  foot: string;
+}) {
+  return (
+    <section className="stat card">
+      <div className="stat-heading">
+        <span>{label}</span>
+        <span className="stat-icon">{icon}</span>
+      </div>
+      <strong>{value}</strong>
+      <small>{foot}</small>
+    </section>
+  );
+}
+function InvoiceList({
+  invoices,
+  onOpen,
+}: {
+  invoices: Invoice[];
+  onOpen: (i: Invoice) => void;
+}) {
+  return (
+    <div className="invoice-list">
+      {invoices.map((i) => (
+        <button className="invoice-row" key={i.id} onClick={() => onOpen(i)}>
+          <span className="invoice-row-icon">
+            <FileText size={20} />
+          </span>
+          <span className="invoice-row-info">
+            <strong>
+              {i.recipient}
+              {i.branch ? " - " + i.branch : ""}
+            </strong>
+            <small>
+              {i.number} <span>·</span> {dateLabel(i.date)}
+            </small>
+            <small className="item-preview">
+              {i.items.map((item) => item.name).join(", ")}
+            </small>
+          </span>
+          <span className="invoice-row-amount">
+            {rupiah(invoiceTotal(i))}
+            <small>{i.items.length} jenis barang</small>
+          </span>
+          <ChevronRight size={17} />
+        </button>
+      ))}
+    </div>
+  );
+}
+function InvoiceForm({
+  shop,
+  invoice,
+  onSave,
+  onCancel,
+}: {
+  shop: Shop;
+  invoice?: Invoice;
+  onSave: (
+    v: Omit<Invoice, "id" | "number" | "createdAt" | "updatedAt">,
+    old?: Invoice,
+  ) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(invoice?.date || localDate()),
+    [recipient, setRecipient] = useState(invoice?.recipient || shop.recipient),
+    [branch, setBranch] = useState(invoice?.branch || shop.branch),
+    [receiver, setReceiver] = useState(invoice?.receiver || shop.receiver),
+    [supplier, setSupplier] = useState(
+      invoice?.shop.supplier || shop.supplier || shop.name,
+    ),
+    [notes, setNotes] = useState(invoice?.notes || ""),
+    [items, setItems] = useState<Item[]>(
+      invoice?.items.map((i) => ({ ...i })) || [
+        { name: "", quantity: 1, price: 0 },
+      ],
+    ),
+    [error, setError] = useState("");
+  function itemChange(index: number, key: keyof Item, value: string) {
+    setItems(
+      items.map((item, n) =>
+        n === index
+          ? { ...item, [key]: key === "name" ? value : Number(value) }
+          : item,
+      ),
+    );
+  }
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!validateItems(items)) {
+      setError(
+        "Isi nama barang, banyaknya lebih dari 0 (maks. 2 desimal), dan harga Rupiah bulat.",
+      );
+      return;
+    }
+    onSave(
+      {
+        date,
+        recipient: recipient.trim(),
+        branch: branch.trim(),
+        receiver: receiver.trim(),
+        notes: notes.trim(),
+        items: items.map((i) => ({ ...i, name: i.name.trim() })),
+        shop: { ...(invoice?.shop || shop), supplier: supplier.trim() },
+      },
+      invoice,
+    );
+  }
+  return (
+    <form onSubmit={submit}>
+      <div className="invoice-form">
+        <div className="form-intro">
+          <span className="mini-icon">
+            <FileText size={20} />
+          </span>
+          <p>
+            Satu pengiriman, satu nota.
+            <br />
+            <b>Jumlah akan dihitung otomatis.</b>
+          </p>
+        </div>
+        <details className="delivery-details">
+          <summary>
+            <span>
+              Untuk:{" "}
+              <b>
+                {recipient}
+                {branch ? " - " + branch : ""}
+              </b>
+            </span>
+            <span>Ubah Detail</span>
+          </summary>
+          <div className="field-grid">
+            <label>
+              Tanggal Pengiriman
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </label>
+            <label>
+              Untuk / Pelanggan
+              <input
+                required
+                maxLength={300}
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                placeholder="KOKARMINA"
+              />
+            </label>
+            <label>
+              Cabang / Toko (opsional)
+              <input
+                maxLength={300}
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                placeholder="Nama cabang tujuan"
+              />
+            </label>
+            <label>
+              Nama Supplier
+              <input
+                required
+                maxLength={300}
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
+                placeholder="Nama Ibu / supplier"
+              />
+            </label>
+          </div>
+        </details>
+        <div className="form-section-title">
+          <h3>Barang yang Dikirim</h3>
+          <span>{items.length} jenis barang</span>
+        </div>
+        <div className="item-form-labels">
+          <span>Nama Barang</span>
+          <span>Banyaknya</span>
+          <span>Harga @ (Rp)</span>
+          <span>Jumlah</span>
+          <span />
+        </div>
+        <div className="item-form">
+          {items.map((item, index) => (
+            <div className="item-edit-row" key={index}>
+              <label>
+                <span>Nama Barang</span>
+                <input
+                  aria-label={`Nama barang ${index + 1}`}
+                  required
+                  maxLength={150}
+                  placeholder="Contoh: Bolen Cokelat"
+                  value={item.name}
+                  onChange={(e) => itemChange(index, "name", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>Banyaknya</span>
+                <input
+                  aria-label={`Banyaknya ${index + 1}`}
+                  type="number"
+                  inputMode="decimal"
+                  min="0.01"
+                  max="999999"
+                  step="0.01"
+                  required
+                  value={item.quantity || ""}
+                  onChange={(e) =>
+                    itemChange(index, "quantity", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Harga @ (Rp)</span>
+                <input
+                  aria-label={`Harga satuan ${index + 1}`}
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="1000000000"
+                  step="1"
+                  required
+                  value={item.price}
+                  placeholder="0"
+                  onChange={(e) => itemChange(index, "price", e.target.value)}
+                />
+              </label>
+              <span className="line-amount">
+                {rupiah(Math.round(item.quantity * item.price))}
+              </span>
+              <button
+                type="button"
+                className="icon-button danger"
+                aria-label={`Hapus barang ${index + 1}`}
+                disabled={items.length === 1}
+                onClick={() => setItems(items.filter((_, n) => n !== index))}
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="text-button add-item"
+          disabled={items.length >= 100}
+          onClick={() =>
+            setItems([...items, { name: "", quantity: 1, price: 0 }])
+          }
+        >
+          <Plus size={17} />
+          Tambah Barang
+        </button>
+        <div className="form-total">
+          <span>Jumlah Total</span>
+          <strong>{rupiah(invoiceTotal({ items }))}</strong>
+        </div>
+        <div className="field-grid">
+          <label>
+            Nama Penerima (boleh diisi saat tanda tangan)
+            <input
+              maxLength={300}
+              value={receiver}
+              onChange={(e) => setReceiver(e.target.value)}
+              placeholder="Nama petugas penerima"
+            />
+          </label>
+          <label>
+            Catatan (opsional)
+            <textarea
+              maxLength={1500}
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Catatan untuk pengiriman ini"
+            />
+          </label>
+        </div>
+        <div className="preview-tip">
+          <ShieldCheck size={17} />
+          <span>Nomor nota dan stempel Hayati akan ditambahkan otomatis.</span>
+        </div>
+        {error && (
+          <p className="field-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="modal-footer">
+        <Button type="button" secondary onClick={onCancel}>
+          Batal
+        </Button>
+        <Button type="submit">
+          <Check size={18} />
+          Simpan &amp; Lihat Nota
+        </Button>
+      </div>
+    </form>
+  );
+}
+function SettingsForm({
+  shop,
+  onSave,
+}: {
+  shop: Shop;
+  onSave: (s: Shop) => void;
+}) {
+  const [form, setForm] = useState(shop),
+    [error, setError] = useState("");
+  useEffect(() => setForm(shop), [shop]);
+  const field = (key: keyof Shop, value: string) =>
+    setForm({ ...form, [key]: value });
+  async function stamp(file: File) {
+    try {
+      if (
+        !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
+        file.size > 1200000
+      )
+        throw new Error("Pilih PNG, JPG, atau WebP maksimal 1,2 MB.");
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      field("stamp", data);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gambar belum dapat dibaca.");
+    }
+  }
+  return (
+    <form
+      className="card settings-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave({ ...form, name: form.name.trim() });
+      }}
+    >
+      <div className="section-heading">
+        <h3>Identitas Toko</h3>
+        <span className="pill muted">OTOMATIS DI NOTA</span>
+      </div>
+      <div className="settings-grid">
+        <div className="field-grid">
+          <label>
+            Nama Usaha
+            <input
+              required
+              maxLength={300}
+              value={form.name}
+              onChange={(e) => field("name", e.target.value)}
+            />
+          </label>
+          <label>
+            Nomor Telepon
+            <input
+              type="tel"
+              maxLength={300}
+              value={form.phone}
+              onChange={(e) => field("phone", e.target.value)}
+            />
+          </label>
+          <label className="full-field">
+            Alamat Toko
+            <textarea
+              maxLength={1000}
+              rows={2}
+              value={form.address}
+              onChange={(e) => field("address", e.target.value)}
+            />
+          </label>
+          <label>
+            Kota
+            <input
+              maxLength={300}
+              value={form.city}
+              onChange={(e) => field("city", e.target.value)}
+            />
+          </label>
+          <label>
+            Nama Supplier
+            <input
+              maxLength={300}
+              value={form.supplier}
+              onChange={(e) => field("supplier", e.target.value)}
+              placeholder="Nama lengkap Ibu"
+            />
+          </label>
+          <label>
+            Pelanggan Utama
+            <input
+              maxLength={300}
+              value={form.recipient}
+              onChange={(e) => field("recipient", e.target.value)}
+            />
+          </label>
+          <label>
+            Cabang Utama
+            <input
+              maxLength={300}
+              value={form.branch}
+              onChange={(e) => field("branch", e.target.value)}
+              placeholder="Cabang yang biasa menerima"
+            />
+          </label>
+          <label className="full-field">
+            Nama Penerima Utama (opsional)
+            <input
+              maxLength={300}
+              value={form.receiver}
+              onChange={(e) => field("receiver", e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="stamp-settings">
+          <h4>Stempel Toko</h4>
+          <div className="stamp-box">
+            <img src={form.stamp || stampUrl} alt="Stempel toko" />
+          </div>
+          <p>Stempel ini otomatis disertakan pada setiap nota baru.</p>
+          <label className="button secondary file-button">
+            <Upload size={16} />
+            Ganti Stempel
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                if (e.target.files?.[0]) stamp(e.target.files[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {form.stamp && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => field("stamp", "")}
+            >
+              Gunakan stempel Hayati
+            </button>
+          )}
+          <small>
+            PNG transparan paling bagus.
+            <br />
+            Maksimal 1,2 MB.
+          </small>
+        </div>
+      </div>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="settings-save">
+        <span>Nota lama tetap memakai detail saat nota dibuat.</span>
+        <Button type="submit">
+          <Check size={17} />
+          Simpan Pengaturan
+        </Button>
+      </div>
+    </form>
+  );
 }
