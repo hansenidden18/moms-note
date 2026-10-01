@@ -12,6 +12,12 @@ A simple Indonesian invoice app for Hayati Cake & Bakery. Built for a shop owner
 
 The app works without an account and the Android app is offline from its first launch. Invoices are stored on the main phone. Export a backup from **Pengaturan** regularly and before uninstalling, clearing app data, or changing phones. Import it on the replacement phone. Automatic cross-device sync is intentionally absent.
 
+### Device-only storage
+
+The Android APK has no internet permission. Its interface, stamp, invoice records, shop settings, and PDF generation are on the phone. Android automatic cloud backup and automatic device transfer are explicitly excluded for all app data. There is no hosted invoice database, account, telemetry, or background upload. GitHub stores the app's source and installer, never the invoices created on the phone.
+
+Exported PDF and backup files are first written to the app's local cache. The user can then choose to save or share a file using the Android share sheet. Choosing another app such as WhatsApp or Drive is an explicit user action outside Nota Hayati; no file is sent automatically. Only the exports directory is exposed through the app's file provider.
+
 ## Installation
 
 **Android is the recommended primary phone for this version.** The signed APK is a complete app with all assets bundled. Download and open the APK, then tap **Install**. Android may request permission to install from the download source; a family member should handle that initial setup. No coding, server, login, or shop configuration is needed to start making invoices. The shop address and phone are already filled in. A Play Store listing is a separate publishing step requiring a developer account. Store or device policies may impose additional checks.
